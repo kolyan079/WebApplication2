@@ -1,145 +1,159 @@
-using System.Text.Json;
-using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
-namespace WebApplication2
+// начальные данные
+List<Person> users = new List<Person>
 {
-    public class Program
+    new() { Id = Guid.NewGuid().ToString(), Name = "Tom", Age = 37 },
+    new() { Id = Guid.NewGuid().ToString(), Name = "Bob", Age = 41 },
+    new() { Id = Guid.NewGuid().ToString(), Name = "Sam", Age = 24 }
+};
+
+var builder = WebApplication.CreateBuilder();
+var app = builder.Build();
+
+app.Run(async (context) =>
+{
+    var response = context.Response;
+    var request = context.Request;
+    var path = request.Path;
+    //string expressionForNumber = "^/api/users/([0-9]+)$";   // если id представл€ет число
+
+    // 2e752824-1657-4c7f-844b-6ec2e168e99c
+    string expressionForGuid = @"^/api/users/\w{8}-\w{4}-\w{4}-\w{4}-\w{12}$";
+    if (path == "/api/users" && request.Method == "GET")
     {
-        //public static string deserializationError = "no";
+        await GetAllPeople(response);
+    }
+    else if (Regex.IsMatch(path, expressionForGuid) && request.Method == "GET")
+    {
+        // получаем id из адреса url
+        string? id = path.Value?.Split("/")[3];
+        await GetPerson(id, response);
+    }
+    else if (path == "/api/users" && request.Method == "POST")
+    {
+        await CreatePerson(response, request);
+    }
+    else if (path == "/api/users" && request.Method == "PUT")
+    {
+        await UpdatePerson(response, request);
+    }
+    else if (Regex.IsMatch(path, expressionForGuid) && request.Method == "DELETE")
+    {
+        string? id = path.Value?.Split("/")[3];
+        await DeletePerson(id, response);
+    }
+    else
+    {
+        response.ContentType = "text/html; charset=utf-8";
+        await response.SendFileAsync("html/index.html");
+    }
+});
 
-        public static void Main()
+app.Run();
+
+// получение всех пользователей
+async Task GetAllPeople(HttpResponse response)
+{
+    await response.WriteAsJsonAsync(users);
+}
+// получение одного пользовател€ по id
+async Task GetPerson(string? id, HttpResponse response)
+{
+    // получаем пользовател€ по id
+    Person? user = users.FirstOrDefault((u) => u.Id == id);
+    // если пользователь найден, отправл€ем его
+    if (user != null)
+        await response.WriteAsJsonAsync(user);
+    // если не найден, отправл€ем статусный код и сообщение об ошибке
+    else
+    {
+        response.StatusCode = 404;
+        await response.WriteAsJsonAsync(new { message = "ѕользователь не найден" });
+    }
+}
+
+async Task DeletePerson(string? id, HttpResponse response)
+{
+    // получаем пользовател€ по id
+    Person? user = users.FirstOrDefault((u) => u.Id == id);
+    // если пользователь найден, удал€ем его
+    if (user != null)
+    {
+        users.Remove(user);
+        await response.WriteAsJsonAsync(user);
+    }
+    // если не найден, отправл€ем статусный код и сообщение об ошибке
+    else
+    {
+        response.StatusCode = 404;
+        await response.WriteAsJsonAsync(new { message = "ѕользователь не найден" });
+    }
+}
+
+async Task CreatePerson(HttpResponse response, HttpRequest request)
+{
+    try
+    {
+        // получаем данные пользовател€
+        var user = await request.ReadFromJsonAsync<Person>();
+        if (user != null)
         {
-            var builder = WebApplication.CreateBuilder();
-            var app = builder.Build();
-            var virgin = true;
-            app.Run(async (context) =>
-            {
-                var response = context.Response;
-                response.Headers.ContentLanguage = "ru-RU";
-                response.ContentType = "text/html; charset=utf-8";
-                context.Response.StatusCode = 200;
-                switch (context.Request.Path)
-                {
-                    case "/date":
-                        await context.Response.WriteAsync($"Date: {DateTime.Now.ToShortDateString()}");
-                        break;
-                    case "/time":
-                        await context.Response.WriteAsync($"Time: {DateTime.Now.ToShortTimeString()}");
-                        break;
-                    case "/api":
-                        var responseText = "Incorrect data";
-                        if (context.Request.HasJsonContentType())
-                        {
-                            var jsonoptions = new JsonSerializerOptions();
-                            jsonoptions.Converters.Add(new PersonConverter());
-                            try
-                            {
-                                var person = await context.Request.ReadFromJsonAsync<Person>(jsonoptions);
-#pragma warning disable CS8602
-                                responseText = $"Name: \"{person.Name}\"; Age: {person.Age}";
-#pragma warning restore CS8602
-                            }
-                            catch (Exception e)
-                            {
-                                responseText = "Incorrect data";
-                                Console.WriteLine($"PersonConvertException: {e.Message}");
-                            }
-                        }
-                        await response.WriteAsJsonAsync(new { text = responseText });
-                        break;
-                    case "/":
-                        if (virgin)
-                        {
-                            virgin = false;
-                            context.Response.Redirect("https://127.0.0.1:443/", true);
-                        }
-                        else
-                        {
-                            response.ContentType = "text/html; charset=utf-8";
-                            await context.Response.SendFileAsync("html/index.html");
-                        }
-                        break;
-                    case "/download":
-                        context.Response.Headers.ContentDisposition = "attachment; filename=3.png";
-                        await context.Response.SendFileAsync("E:\\3.png");
-                        break;
-                    case "/redirect":
-                        context.Response.Redirect("https://metanit.com/sharp/aspnet6/2.9.php", true);
-                        break;
-                    case "/postuser":
-                        var langList = "";
-                        foreach (var lang in context.Request.Form["languages"])
-                        {
-                            langList += $" {lang}";
-                        }
-                        await context.Response.WriteAsync($"<div><p>Name: {context.Request.Form["name"]}</p>" +
-                        $"<p>Age: {context.Request.Form["age"]}</p>" +
-                        $"<div>Languages:{langList}</ul></div>");
-                        break;
-                    default:
-                        context.Response.StatusCode = 404;
-                        await context.Response.WriteAsync($"404 - Not found: \"{context.Request.Path}\".");
-                        break;
-                }
-            });
-            app.Run();
+            // устанавливаем id дл€ нового пользовател€
+            user.Id = Guid.NewGuid().ToString();
+            // добавл€ем пользовател€ в список
+            users.Add(user);
+            await response.WriteAsJsonAsync(user);
         }
-
-        public record Person(string Name, byte Age);
-
-        public class PersonConverter : JsonConverter<Person>
+        else
         {
-            public override Person? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-            {
-                var personName = "Undefined";
-                long personAge = 0;
-                while (reader.Read())
-                {
-                    if (reader.TokenType == JsonTokenType.EndObject)
-                        break;
-                    if (reader.TokenType == JsonTokenType.PropertyName)
-                    {
-                        var propertyName = reader.GetString();
-                        reader.Read();
-                        switch (propertyName?.ToLower())
-                        {
-                            case "name":
-                                string? name = reader.GetString();
-                                if (string.IsNullOrEmpty(name))
-                                    throw new Exception("name is null or empty");
-                                else
-                                    personName = name;
-                                break;
-                            case "age" when reader.TokenType == JsonTokenType.String:
-                                string? stringValue = reader.GetString();
-                                if (string.IsNullOrEmpty(stringValue))
-                                    throw new Exception("string age is null or empty");
-                                else
-                                    if (long.TryParse(stringValue, out long value))
-                                    personAge = value;
-                                break;
-                            case "age" when reader.TokenType == JsonTokenType.Number:
-                                personAge = reader.GetInt64();
-                                break;
-                            default:
-                                throw new Exception("Unsupported JsonTokenType: \"{reader.TokenType}\".");
-                        }
-                    }
-                    else
-                        throw new Exception($"reader.TokenType = {reader.TokenType}");
-                }
-                if ((personAge < 0) || (personAge > 123))
-                    throw new Exception("Not between");
-                return new Person(personName, (byte)personAge);
-            }
-
-            public override void Write(Utf8JsonWriter writer, Person person, JsonSerializerOptions options)
-            {
-                writer.WriteStartObject();
-                writer.WriteString("name", person.Name);
-                writer.WriteNumber("age", person.Age);
-                writer.WriteEndObject();
-            }
+            throw new Exception("Ќекорректные данные");
         }
     }
+    catch (Exception)
+    {
+        response.StatusCode = 400;
+        await response.WriteAsJsonAsync(new { message = "Ќекорректные данные" });
+    }
+}
+
+async Task UpdatePerson(HttpResponse response, HttpRequest request)
+{
+    try
+    {
+        // получаем данные пользовател€
+        Person? userData = await request.ReadFromJsonAsync<Person>();
+        if (userData != null)
+        {
+            // получаем пользовател€ по id
+            var user = users.FirstOrDefault(u => u.Id == userData.Id);
+            // если пользователь найден, измен€ем его данные и отправл€ем обратно клиенту
+            if (user != null)
+            {
+                user.Age = userData.Age;
+                user.Name = userData.Name;
+                await response.WriteAsJsonAsync(user);
+            }
+            else
+            {
+                response.StatusCode = 404;
+                await response.WriteAsJsonAsync(new { message = "ѕользователь не найден" });
+            }
+        }
+        else
+        {
+            throw new Exception("Ќекорректные данные");
+        }
+    }
+    catch (Exception)
+    {
+        response.StatusCode = 400;
+        await response.WriteAsJsonAsync(new { message = "Ќекорректные данные" });
+    }
+}
+public class Person
+{
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    public int Age { get; set; }
 }
