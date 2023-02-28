@@ -26,7 +26,7 @@ namespace WebApplication2
                     case "/time":
                         await context.Response.WriteAsync($"Time: {DateTime.Now.ToShortTimeString()}");
                         break;
-                    case "/userapi":
+                    case "/api":
                         var responseText = "Incorrect data";
                         if (context.Request.HasJsonContentType())
                         {
